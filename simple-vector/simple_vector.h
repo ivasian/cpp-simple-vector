@@ -25,62 +25,42 @@ public:
 
     SimpleVector() noexcept = default;
 
-
     // Создаёт вектор из size элементов, инициализированных значением по умолчанию
-    explicit SimpleVector(size_t size) {
-        if(size > 0) {
-            ArrayPtr<Type> temp (size);
-            std::fill(temp.Get(), temp.Get()+size, Type());
-            data_.swap(temp);
-            size_ = size;
-            capacity_ = size;
-        }
+    explicit SimpleVector(size_t size) :
+                data_(ArrayPtr<Type>(size)),
+                size_(size), capacity_(size){
+            std::fill(data_.Get(), data_.Get()+size, Type());
     }
-    SimpleVector(ReserveProxyObj obj) {
-        ArrayPtr<Type> temp (obj.capacity_to_reserve_);
-        capacity_ = obj.capacity_to_reserve_;
+
+    SimpleVector(ReserveProxyObj obj) :
+                data_(ArrayPtr<Type>(obj.capacity_to_reserve_)),
+                capacity_(obj.capacity_to_reserve_){
     }
 
     // Создаёт вектор из size элементов, инициализированных значением value
-    SimpleVector(size_t size, const Type& value) {
-        if(size > 0) {
-            ArrayPtr<Type> temp (size);
-            std::fill(temp.Get(), temp.Get()+size, value);
-            data_.swap(temp);
-            size_ = size;
-            capacity_ = size;
-        }
+    SimpleVector(size_t size, const Type& value) :
+                data_(ArrayPtr<Type>(size)),
+                size_(size), capacity_(size){
+        std::fill(data_.Get(), data_.Get()+size, value);
     }
 
     // Создаёт вектор из std::initializer_list
-    SimpleVector(std::initializer_list<Type> init) {
-        if(init.size() > 0){
-            ArrayPtr<Type> temp (init.size());
-            data_.swap(temp);
-            capacity_ = init.size();
-            Type* ptr = data_.Get();
-            for(const Type& value : init ){
-                *ptr++ = value;
-            }
-            size_ = init.size();
-        }
+    SimpleVector(std::initializer_list<Type> init) :
+                data_(ArrayPtr<Type>(init.size())),
+                size_(init.size()), capacity_(init.size()){
+        std::copy(init.begin(), init.end(), data_.Get());
     }
 
-    SimpleVector(const SimpleVector& other) {
-        ArrayPtr<Type> temp (other.size_);
-        auto ptr = temp.Get();
-        for(const auto& value : other){
-            *ptr++ = value;
-        }
-        data_.swap(temp);
-        size_ = other.size_;
-        capacity_ = other.capacity_;
+    SimpleVector(const SimpleVector& other)  :
+            data_(ArrayPtr<Type>(other.size_)),
+            size_(other.size_), capacity_(other.size_){
+        std::copy(other.begin(), other.end(), data_.Get());
     }
 
-    SimpleVector(SimpleVector&& other) {
-        data_.swap(other.data_);
-        std::swap(size_, other.size_);
-        std::swap(capacity_, other.capacity_);
+    SimpleVector(SimpleVector&& other) :
+                data_(std::move(other.data_)),
+                size_(std::exchange(other.size_,0)),
+                capacity_(std::exchange(other.capacity_,0)){
     }
 
     // Возвращает количество элементов в массиве
@@ -100,11 +80,13 @@ public:
 
     // Возвращает ссылку на элемент с индексом index
     Type& operator[](size_t index) noexcept {
+        assert(index < size_);
         return data_[index];
     }
 
     // Возвращает константную ссылку на элемент с индексом index
     const Type& operator[](size_t index) const noexcept {
+        assert(index < size_);
         return const_cast<const Type&> (data_[index]);
     }
 
@@ -189,17 +171,23 @@ public:
     }
 
     SimpleVector& operator=(const SimpleVector& rhs) {
-        if(this == &rhs) { return *this; }
+        if(this == &rhs) {return *this;}
         ArrayPtr<Type> temp (rhs.size_);
-        Type* ptr = temp.Get();
-        for(const auto& value : rhs){
-            *ptr++ = value;
-        }
-        data_.swap(temp);
+        std::copy(temp.Get(), temp.Get() + rhs.size_, rhs.data_.Get());
+        data_ = std::move(temp);
         capacity_ = rhs.size_;
         size_ = rhs.size_;
         return *this;
     }
+    // Оператор перемещения
+    SimpleVector& operator=(SimpleVector&& rhs) {
+        if(this == &rhs) {return *this;}
+        data_ = std::move(rhs.data_);
+        capacity_ = rhs.size_;
+        size_ = rhs.size_;
+        return *this;
+    }
+
 
     // Добавляет элемент в конец вектора
     // При нехватке места увеличивает вдвое вместимость вектора
@@ -223,6 +211,7 @@ public:
     // вместимость вектора должна увеличиться вдвое, а для вектора вместимостью 0 стать равной 1
     Iterator Insert(ConstIterator pos, const Type& value) {
         size_t index = pos - begin();
+        assert(index <= size_);
         if(capacity_ <= size_){
             Reserve(capacity_ == 0 ? 1 : capacity_*2);
         }
@@ -237,6 +226,7 @@ public:
 
     Iterator Insert(ConstIterator pos, Type&& value) {
         size_t index = pos - begin();
+        assert(index <= size_);
         if(capacity_ <= size_){
             Reserve(capacity_ == 0 ? 1 : capacity_*2);
         }
@@ -249,14 +239,14 @@ public:
 
     // "Удаляет" последний элемент вектора. Вектор не должен быть пустым
     void PopBack() noexcept {
-        if(size_ > 0){
+        assert(size_ > 0);
             --size_;
-        }
     }
 
     // Удаляет элемент вектора в указанной позиции
     Iterator Erase(ConstIterator pos) {
         Iterator It = const_cast <Iterator> (pos);
+        assert(pos - begin() < size_);
         std::copy(std::make_move_iterator(It + 1), std::make_move_iterator(end()), It);
         --size_;
         return const_cast <Iterator> (pos);;
@@ -273,7 +263,7 @@ public:
         if(new_capacity > capacity_){
             ArrayPtr<Type> temp(new_capacity);
             std::copy(std::make_move_iterator(begin()), std::make_move_iterator(end()), temp.Get());
-            data_.swap(temp);
+            data_ = std::move(temp);
             capacity_ = new_capacity;
         }
     }
@@ -286,7 +276,7 @@ private:
 
 template <typename Type>
 inline bool operator==(const SimpleVector<Type>& lhs, const SimpleVector<Type>& rhs) {
-    return std::equal(lhs.begin(), lhs.end(), rhs.begin());
+    return lhs.GetSize() == rhs.GetSize() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
 }
 
 template <typename Type>

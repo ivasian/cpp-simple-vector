@@ -1,7 +1,7 @@
 #pragma once
 
 #include <stdexcept> // содержит std::logic_error
-
+#include <utility>
 
 template <typename Type>
 class ArrayPtr {
@@ -27,6 +27,17 @@ public:
 
     ~ArrayPtr() {
         delete[] raw_ptr_;
+    }
+
+    ArrayPtr(ArrayPtr &&rhs){
+        delete[] raw_ptr_;
+        raw_ptr_ = std::exchange(rhs.raw_ptr_, nullptr);
+    }
+
+    ArrayPtr& operator=(ArrayPtr &&rhs){
+        delete[] raw_ptr_;
+        raw_ptr_ = std::exchange(rhs.raw_ptr_, nullptr);
+        return *this;
     }
 
     // Запрещаем присваивание
